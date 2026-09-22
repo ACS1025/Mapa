@@ -1,0 +1,30 @@
+name: Atualização Automática de Interdições
+
+on:
+  schedule:
+    # Roda automaticamente a cada 6 horas
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Permite rodar manualmente com 1 clique no GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Executar Script
+        run: python3 atualizar_interdicoes.py
+
+      - name: Commit e Push dos dados atualizados
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add interdicoes.json interdicoes_manual.json
+          git commit -m "bot: atualização automática de interdições [skip ci]" || exit 0
+          git push

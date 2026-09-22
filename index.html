@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Komando - Rodovias Interditadas no Brasil — Painel Oficial</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            red: '#ef4444',
+                            amber: '#f59e0b',
+                            dark: '#0f172a',
+                            panel: 'rgba(15, 23, 42, 0.85)'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Custom Leaflet styling */
+        .leaflet-popup-content-wrapper {
+            background: rgba(15, 23, 42, 0.95) !important;
+            color: #f8fafc !important;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 1rem !important;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3) !important;
+            padding: 4px;
+        }
+        .leaflet-popup-tip {
+            background: rgba(15, 23, 42, 0.95) !important;
+        }
+        .leaflet-popup-content {
+            margin: 12px 16px !important;
+            line-height: 1.5;
+        }
+        
+        /* Custom Pulsing Marker Animations */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 14px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        @keyframes pulse-amber {
+            0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+            70% { box-shadow: 0 0 0 14px rgba(245, 158, 11, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+        .marker-pulse-total {
+            animation: pulse-red 2s infinite;
+            border-radius: 50%;
+        }
+        .marker-pulse-parcial {
+            animation: pulse-amber 2s infinite;
+            border-radius: 50%;
+        }
+
+        /* Glassmorphism Classes */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.80);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+    </style>
+    <base target="_blank">
+</head>
+<body class="h-full w-full bg-slate-950 text-slate-100 overflow-hidden flex flex-col antialiased">
+
+    <!-- Top Navigation / Header Banner -->
+    <header class="z-20 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+        <div class="flex items-center gap-3">
+            <div class="p-2.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 flex items-center justify-center">
+                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+            </div>
+            <!-- Cabeçalho com Logo e Marca da Empresa -->
+    <div class="flex items-center gap-3">
+        <!-- Logotipo da Empresa (Ícone SVG ou Imagem) -->
+        <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-blue-600/20 border border-indigo-500/30 text-indigo-400 shrink-0 shadow-lg shadow-indigo-950/40">
+            <!-- Substitua a tag <svg> por <img src="sua-logo.png" alt="Komando" class="w-7 h-7 object-contain"> se tiver arquivo de imagem -->
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
+                <path d="m9 12 2 2 4-4"/>
+            </svg>
+        </div>
+
+        <!-- Nomes da Empresa e do Painel -->
+        <div>
+            <div class="flex items-center gap-2">
+                <!-- Nome da Empresa -->
+                <span class="text-xs font-semibold uppercase tracking-wider text-indigo-400">
+                    Komando Gerenciamento de Riscos
+                </span>
+                <span class="text-slate-600 text-xs">•</span>
+                <span class="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded-full font-medium">
+                    Torre de Controle
+                </span>
+            </div>
+
+            <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2 mt-0.5">
+                Rodovias Interditadas no Brasil
+                <span class="text-xs font-normal text-slate-400 hidden md:inline">— Chuvas e Condições do Tráfego</span>
+            </h1>
+
+            <p class="text-xs text-slate-400">
+                Dados consolidados de fontes oficiais · Consolidado em 21/09/2026 · <b class="text-amber-400 font-medium">sempre confirme nos links oficiais antes de rodar</b>
+            </p>
+        </div>
+    </div>
+
+        <!-- Quick Stats & Theme Toggle -->
+        <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <div class="flex items-center gap-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60 text-xs">
+                <span class="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 font-semibold flex items-center gap-1.5" id="stat-total">
+                    <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                    <span id="count-total">14</span> Totais
+                </span>
+                <span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 font-semibold flex items-center gap-1.5" id="stat-parcial">
+                    <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span id="count-parcial">8</span> Parciais
+                </span>
+                <span class="px-2.5 py-1 rounded-lg bg-slate-700/50 text-slate-300 font-medium hidden sm:inline" id="stat-all">
+                    <span id="count-all">22</span> Mapeados
+                </span>
+            </div>
+
+            <!-- Mobile Drawer Toggle Button -->
+            <button id="toggle-sidebar" class="lg:hidden p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition">
+                <i class="fa-solid fa-bars text-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="relative flex-1 w-full h-full overflow-hidden flex">
+        
+        <!-- Sidebar Panel / Floating Drawer -->
+        <aside id="sidebar" class="absolute lg:relative z-10 w-full sm:w-96 lg:w-96 h-full bg-slate-900/95 lg:bg-slate-900/90 backdrop-blur-xl border-r border-slate-800/80 flex flex-col transition-transform duration-300 transform -translate-x-full lg:translate-x-0">
+            
+            <!-- Filter Options & Search Container -->
+            <div class="p-4 border-b border-slate-800 space-y-3">
+                
+                <!-- Search Input Bar -->
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                    <input type="text" id="search-input" placeholder="Buscar por rodovia, cidade ou causa..." 
+                           class="w-full pl-9 pr-8 py-2 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition">
+                    <button id="clear-search" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </button>
+                </div>
+
+                <!-- Status Filters -->
+                <div>
+                    <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">Status da Via</label>
+                    <div class="grid grid-cols-3 gap-1.5" id="status-filters">
+                        <button data-f="all" class="filter-btn active py-1.5 px-2 text-xs font-medium rounded-lg border border-slate-700 bg-blue-600 text-white transition text-center">Todos</button>
+                        <button data-f="total" class="filter-btn py-1.5 px-2 text-xs font-medium rounded-lg border border-slate-800 bg-slate-800/80 text-slate-300 hover:bg-slate-700/50 transition text-center">Total</button>
+                        <button data-f="parcial" class="filter-btn py-1.5 px-2 text-xs font-medium rounded-lg border border-slate-800 bg-slate-800/80 text-slate-300 hover:bg-slate-700/50 transition text-center">Parcial</button>
+                    </div>
+                </div>
+
+                <!-- State (UF) Filters -->
+                <div>
+                    <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">Estado (UF)</label>
+                    <div class="flex flex-wrap gap-1.5" id="uf-filters">
+                        <button data-uf="ALL" class="uf-btn active py-1 px-3 text-xs rounded-full border border-slate-700 bg-slate-700 text-white font-medium transition">Todos</button>
+                        <button data-uf="SP" class="uf-btn py-1 px-3 text-xs rounded-full border border-slate-800 bg-slate-800/80 text-slate-300 hover:bg-slate-700/50 transition">SP</button>
+                        <button data-uf="PR" class="uf-btn py-1 px-3 text-xs rounded-full border border-slate-800 bg-slate-800/80 text-slate-300 hover:bg-slate-700/50 transition">PR</button>
+                        <button data-uf="MG" class="uf-btn py-1 px-3 text-xs rounded-full border border-slate-800 bg-slate-800/80 text-slate-300 hover:bg-slate-700/50 transition">MG</button>
+                        <button data-uf="RS" class="uf-btn py-1 px-3 text-xs rounded-full border border-slate-800 bg-slate-800/80 text-slate-300 hover:bg-slate-700/50 transition">RS</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- List Container with Scroll -->
+            <div class="flex-1 overflow-y-auto p-3 space-y-2.5" id="interdictions-list">
+                <!-- Interdictions Cards dynamic injection -->
+            </div>
+
+            <!-- Sidebar Drawer Close Button for Mobile -->
+            <div class="p-2 border-t border-slate-800 lg:hidden text-center">
+                <button id="close-sidebar" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition">
+                    <i class="fa-solid fa-map-location-dot mr-1.5"></i> Ver no Mapa
+                </button>
+            </div>
+        </aside>
+
+        <!-- Leaflet Map Container -->
+        <main class="flex-1 h-full w-full relative">
+            <div id="map" class="h-full w-full z-0 bg-slate-950"></div>
+
+            <!-- Floating Map Control Buttons Overlay -->
+            <div class="absolute top-4 right-4 z-[500] flex flex-col gap-2">
+                <button id="recenter-map" title="Centralizar Mapa" class="p-2.5 bg-slate-900/90 text-slate-200 border border-slate-700/80 rounded-xl shadow-lg hover:bg-slate-800 transition">
+                    <i class="fa-solid fa-crosshairs text-base"></i>
+                </button>
+                <button id="toggle-map-style" title="Alternar Modo de Mapa (Escuro / Claro)" class="p-2.5 bg-slate-900/90 text-slate-200 border border-slate-700/80 rounded-xl shadow-lg hover:bg-slate-800 transition">
+                    <i class="fa-solid fa-layer-group text-base"></i>
+                </button>
+            </div>
+
+            <!-- Floating Quick Legend -->
+            <div class="absolute bottom-6 right-4 z-[500] hidden sm:block bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-xl p-3 shadow-xl text-xs space-y-1.5">
+                <div class="font-semibold text-slate-300 mb-1">Legenda de Status</div>
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-red-500 border border-white/40 inline-block"></span>
+                    <span class="text-slate-300">Interdição Total</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-amber-500 border border-white/40 inline-block"></span>
+                    <span class="text-slate-300">Parcial / Restrição</span>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Footer Section -->
+    <footer class="z-20 border-t border-slate-800 bg-slate-900/95 text-slate-400 px-4 py-2.5 text-xs flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span class="font-semibold text-slate-300"><i class="fa-solid fa-building-shield mr-1"></i> Fontes oficiais:</span>
+            <a href="https://der.sp.gov.br" class="text-blue-400 hover:text-blue-300 underline transition">DER-SP</a>
+            <a href="https://www.gov.br/prf" class="text-blue-400 hover:text-blue-300 underline transition">PRF</a>
+            <a href="https://prepara.rs.gov.br/elnino" class="text-blue-400 hover:text-blue-300 underline transition">Defesa Civil RS (Prepara El Niño)</a>
+            <a href="https://www.estado.rs.gov.br" class="text-blue-400 hover:text-blue-300 underline transition">Secom/DAER-RS</a>
+            <a href="https://observatorio.infraestrutura.mg.gov.br" class="text-blue-400 hover:text-blue-300 underline transition">DER-MG</a>
+            <a href="https://www.dnit.gov.br" class="text-blue-400 hover:text-blue-300 underline transition">DNIT</a>
+        </div>
+        <div class="text-slate-500 text-[11px]">
+            Arquivo gerado automaticamente — rode <code class="bg-slate-800 px-1.5 py-0.5 rounded text-amber-300">atualizar_interdicoes.py</code> para atualizar os dados.
+        </div>
+    </footer>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // Complete dataset (22 points with all original attributes preserved)
+        let DATA = [
+            {"uf": "SP", "rodovia": "SP-165", "nome": "Rod. Benedito Pascoal de França", "km": "km 88", "local": "Eldorado", "lat": -24.52, "lon": -48.1, "status": "total", "causa": "Alagamento — Rio Ribeira de Iguape fora da cota", "fonte": "DER-SP / Defesa Civil SP", "data": "14/09/2026"}, 
+            {"uf": "SP", "rodovia": "SP-165", "nome": "Rod. Benedito Pascoal de França", "km": "km 42,5 a 73", "local": "Sete Barras", "lat": -24.18, "lon": -48.57, "status": "total", "causa": "Alagamento", "fonte": "DER-SP / Defesa Civil SP", "data": "14/09/2026"}, 
+            {"uf": "SP", "rodovia": "SP-250", "nome": "Rod. Sebastião Ferraz de Camargo Penteado", "km": "km 279", "local": "Guapiara", "lat": -24.19, "lon": -48.5, "status": "parcial", "causa": "Erosão na pista — veículos pesados proibidos; demais em Pare & Siga", "fonte": "DER-SP", "data": "14/09/2026"}, 
+            {"uf": "SP", "rodovia": "SP-099", "nome": "Rod. dos Tamoios — Serra Antiga", "km": "km 77,9", "local": "Caraguatatuba/Ubatuba", "lat": -23.61, "lon": -45.4, "status": "total", "causa": "Queda de árvore (solo encharcado) — desvio pela Serra Nova em comboio", "fonte": "DER-SP / concessionária", "data": "14/09/2026"}, 
+            {"uf": "SP", "rodovia": "—", "nome": "Região de Juquitiba — múltiplos pontos", "km": "—", "local": "Juquitiba", "lat": -23.93, "lon": -47.07, "status": "parcial", "causa": "+70 pontos de deslizamento e 15 alagamentos na região", "fonte": "Defesa Civil SP", "data": "14/09/2026"}, 
+            {"uf": "PR", "rodovia": "BR-476", "nome": "Estrada da Ribeira", "km": "vários pontos", "local": "Adrianópolis/Cerro Azul (região)", "lat": -25.7, "lon": -49.0, "status": "parcial", "causa": "Fortes chuvas — diversos pontos de bloqueio na via", "fonte": "Mídia local/PRF", "data": "15/09/2026"}, 
+            {"uf": "MG", "rodovia": "BR-265", "nome": "Ponte Torta sobre o Rio Sapucaí", "km": "km 516", "local": "Carmo do Rio Claro", "lat": -21.0, "lon": -46.12, "status": "parcial", "causa": "Restrição a veículos de carga e ônibus — avaliação estrutural da ponte", "fonte": "DNIT / DER-MG", "data": "02/2026 (vigente)"}, 
+            {"uf": "RS", "rodovia": "ERS-630", "nome": "", "km": "km 36", "local": "Lavras do Sul", "lat": -30.81, "lon": -44.02, "status": "total", "causa": "Água sobre a pista", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-630", "nome": "", "km": "km 56", "local": "São Gabriel", "lat": -30.34, "lon": -54.32, "status": "total", "causa": "Água sobre a pista", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-130", "nome": "", "km": "km 36", "local": "Venâncio Aires", "lat": -29.61, "lon": -52.2, "status": "total", "causa": "Alagamento", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-431", "nome": "", "km": "—", "local": "Bento Gonçalves", "lat": -29.17, "lon": -51.52, "status": "total", "causa": "Alagamento", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-129", "nome": "", "km": "—", "local": "Bom Retiro do Sul / Colinas", "lat": -29.55, "lon": -51.55, "status": "total", "causa": "Alagamento", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-569", "nome": "Ponte (km 28)", "km": "km 28", "local": "Barra Funda", "lat": -27.86, "lon": -53.01, "status": "total", "causa": "Bloqueio total da ponte", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-433", "nome": "Desvio da ponte s/ Arroio Jacaré", "km": "km 8", "local": "Relvado", "lat": -29.11, "lon": -52.77, "status": "total", "causa": "Bloqueio total no desvio", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-132", "nome": "", "km": "km 5", "local": "Camargo", "lat": -28.59, "lon": -52.2, "status": "total", "causa": "Bloqueio total", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-348", "nome": "", "km": "Sangrador", "local": "Tapera/Sananduva (região)", "lat": -27.9, "lon": -52.95, "status": "total", "causa": "Bloqueio", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-418", "nome": "", "km": "km 5", "local": "Santa Cruz do Sul", "lat": -29.72, "lon": -52.43, "status": "parcial", "causa": "Bloqueio parcial", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-324", "nome": "", "km": "—", "local": "Passo Fundo", "lat": -28.26, "lon": -52.23, "status": "parcial", "causa": "Bloqueio parcial", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "VRS-843", "nome": "", "km": "—", "local": "Feliz", "lat": -29.45, "lon": -51.31, "status": "total", "causa": "Obras", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-437", "nome": "", "km": "—", "local": "Vila Flores", "lat": -28.87, "lon": -51.53, "status": "total", "causa": "Obras", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-530", "nome": "", "km": "—", "local": "Dilermando de Aguiar", "lat": -29.71, "lon": -53.89, "status": "parcial", "causa": "Bloqueio parcial", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}, 
+            {"uf": "RS", "rodovia": "ERS-344", "nome": "Ponte s/ Rio Ijuí", "km": "—", "local": "Santo Ângelo / Entre-Ijuís", "lat": -28.34, "lon": -53.87, "status": "parcial", "causa": "Bloqueio parcial na ponte", "fonte": "DAER-RS / Secom-RS", "data": "22/07/2026"}
+        ];
+
+        let map, mapMarkers = [];
+        let currentStatusFilter = 'all';
+        let currentUFFilter = 'ALL';
+        let searchQuery = '';
+        let currentTileLayer;
+        let isDarkMap = true;
+
+        // 100% Free Open Tiles (NO API KEY required)
+        const darkTiles = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+        const lightTiles = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+        // Check for interdicoes.json on server load with fallback
+        fetch('interdicoes.json')
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(p => {
+                if (p.interdicoes && p.interdicoes.length) { 
+                    DATA = p.interdicoes; 
+                }
+                initApp();
+            })
+            .catch(() => { 
+                initApp(); 
+            });
+
+        function initApp() {
+            initMap();
+            renderListAndMarkers();
+            setupEventListeners();
+        }
+
+        // Initialize Leaflet Map
+        function initMap() {
+            map = L.map('map', {
+                center: [-26.5, -50.5],
+                zoom: 6,
+                minZoom: 4,
+                zoomControl: false
+            });
+
+            // Add Zoom Control at bottom left
+            L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+            // Add Tile Layer without API key restriction
+            currentTileLayer = L.tileLayer(darkTiles, {
+                maxZoom: 16,
+                attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+            }).addTo(map);
+        }
+
+        // Create Custom Leaflet Marker
+        function createCustomMarker(item) {
+            const isTotal = item.status === 'total';
+            const colorClass = isTotal ? 'bg-red-500' : 'bg-amber-500';
+            const pulseClass = isTotal ? 'marker-pulse-total' : 'marker-pulse-parcial';
+
+            const iconHtml = `
+                <div class="relative flex items-center justify-center w-6 h-6 rounded-full ${colorClass} ${pulseClass} border-2 border-white shadow-md">
+                    <span class="w-2 h-2 rounded-full bg-white"></span>
+                </div>
+            `;
+
+            const customIcon = L.divIcon({
+                html: iconHtml,
+                className: 'custom-leaflet-marker',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12],
+                popupAnchor: [0, -12]
+            });
+
+            const marker = L.marker([item.lat, item.lon], { icon: customIcon });
+
+            // Popup content formatted with exact requested structure
+            const popupContent = `
+                <div class="pop">
+                    <div class="flex items-center justify-between gap-2 mb-1.5">
+                        <b class="text-white text-sm">${item.rodovia}</b>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase text-white ${isTotal ? 'bg-red-600' : 'bg-amber-600'}">
+                            ${isTotal ? 'TOTAL' : 'PARCIAL'}
+                        </span>
+                    </div>
+                    ${item.nome ? `<div class="text-xs font-medium text-slate-300 mb-1">${item.nome}</div>` : ''}
+                    <div class="text-xs text-slate-300 my-1">
+                        📍 <b>${item.local}</b> · ${item.km} · UF ${item.uf}
+                    </div>
+                    <div class="text-xs text-slate-200 bg-slate-800/80 p-2 rounded-lg my-1.5 border border-slate-700/50">
+                        ${item.causa}
+                    </div>
+                    <div class="meta text-[11px] text-slate-400 mt-2 pt-1 border-t border-slate-700/60">
+                        Fonte: ${item.fonte} · ${item.data}
+                    </div>
+                </div>
+            `;
+
+            marker.bindPopup(popupContent);
+            marker._itemData = item;
+            return marker;
+        }
+
+        // Render Cards List and Add Markers to Map
+        function renderListAndMarkers() {
+            // Clear existing markers
+            mapMarkers.forEach(m => map.removeLayer(m));
+            mapMarkers = [];
+
+            const listContainer = document.getElementById('interdictions-list');
+            listContainer.innerHTML = '';
+
+            let visibleCount = 0;
+            let totalCount = 0;
+            let parcialCount = 0;
+
+            DATA.forEach((item) => {
+                const matchesStatus = (currentStatusFilter === 'all') || (item.status === currentStatusFilter);
+                const matchesUF = (currentUFFilter === 'ALL') || (item.uf === currentUFFilter);
+                
+                const searchLower = searchQuery.toLowerCase();
+                const matchesSearch = !searchQuery || 
+                    item.rodovia.toLowerCase().includes(searchLower) ||
+                    (item.nome && item.nome.toLowerCase().includes(searchLower)) ||
+                    item.local.toLowerCase().includes(searchLower) ||
+                    item.causa.toLowerCase().includes(searchLower) ||
+                    item.uf.toLowerCase().includes(searchLower);
+
+                if (matchesStatus && matchesUF && matchesSearch) {
+                    visibleCount++;
+                    if (item.status === 'total') totalCount++;
+                    if (item.status === 'parcial') parcialCount++;
+
+                    // Add Marker to Map
+                    const marker = createCustomMarker(item);
+                    marker.addTo(map);
+                    mapMarkers.push(marker);
+
+                    // Build Sidebar List Item
+                    const isTotal = item.status === 'total';
+                    const card = document.createElement('div');
+                    card.className = `p-3 rounded-xl border transition-all duration-200 cursor-pointer bg-slate-800/50 hover:bg-slate-800 border-slate-700/60 hover:border-slate-600 shadow-sm flex flex-col gap-1.5 group`;
+                    
+                    card.innerHTML = `
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="font-bold text-sm text-white group-hover:text-blue-400 transition">
+                                ${item.rodovia} <span class="text-xs font-semibold text-slate-400">(${item.uf})</span>
+                            </span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase text-white ${isTotal ? 'bg-red-500/80' : 'bg-amber-500/80'}">
+                                ${isTotal ? 'TOTAL' : 'PARCIAL'}
+                            </span>
+                        </div>
+                        ${item.nome ? `<div class="text-xs font-medium text-slate-300 truncate">${item.nome}</div>` : ''}
+                        <div class="text-xs text-slate-400 flex items-center gap-1">
+                            <i class="fa-solid fa-location-dot text-red-400 text-[10px]"></i>
+                            <span>${item.local} · ${item.km}</span>
+                        </div>
+                        <div class="text-xs text-slate-300 bg-slate-900/60 p-2 rounded-lg border border-slate-800 line-clamp-2 mt-0.5">
+                            ${item.causa}
+                        </div>
+                        <div class="text-[10px] text-slate-400 flex justify-between items-center mt-1 pt-1 border-t border-slate-800">
+                            <span>${item.fonte}</span>
+                            <span>${item.data}</span>
+                        </div>
+                    `;
+
+                    // Click card to fly to marker
+                    card.addEventListener('click', () => {
+                        map.flyTo([item.lat, item.lon], 11, { duration: 1.2 });
+                        marker.openPopup();
+                        
+                        // Mobile auto close sidebar
+                        if (window.innerWidth < 1024) {
+                            document.getElementById('sidebar').classList.add('-translate-x-full');
+                        }
+                    });
+
+                    listContainer.appendChild(card);
+                }
+            });
+
+            // If empty search results
+            if (visibleCount === 0) {
+                listContainer.innerHTML = `
+                    <div class="p-8 text-center text-slate-400 flex flex-col items-center gap-2">
+                        <i class="fa-solid fa-filter-circle-xmark text-3xl text-slate-600"></i>
+                        <span class="text-xs font-medium">Nenhum ponto de interdição encontrado com os filtros atuais.</span>
+                    </div>
+                `;
+            }
+
+            // Update Header Counts
+            document.getElementById('count-total').innerText = totalCount;
+            document.getElementById('count-parcial').innerText = parcialCount;
+            document.getElementById('count-all').innerText = visibleCount;
+        }
+
+        // Setup User Event Listeners
+        function setupEventListeners() {
+            // Status Filters
+            document.getElementById('status-filters').addEventListener('click', (e) => {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+
+                document.querySelectorAll('#status-filters button').forEach(b => {
+                    b.classList.remove('active', 'bg-blue-600', 'text-white', 'border-slate-700');
+                    b.classList.add('bg-slate-800/80', 'text-slate-300', 'border-slate-800');
+                });
+
+                btn.classList.add('active', 'bg-blue-600', 'text-white', 'border-slate-700');
+                btn.classList.remove('bg-slate-800/80', 'text-slate-300', 'border-slate-800');
+
+                currentStatusFilter = btn.dataset.f;
+                renderListAndMarkers();
+            });
+
+            // UF Filters
+            document.getElementById('uf-filters').addEventListener('click', (e) => {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+
+                document.querySelectorAll('#uf-filters button').forEach(b => {
+                    b.classList.remove('active', 'bg-slate-700', 'text-white', 'border-slate-700');
+                    b.classList.add('bg-slate-800/80', 'text-slate-300', 'border-slate-800');
+                });
+
+                btn.classList.add('active', 'bg-slate-700', 'text-white', 'border-slate-700');
+                btn.classList.remove('bg-slate-800/80', 'text-slate-300', 'border-slate-800');
+
+                currentUFFilter = btn.dataset.uf;
+                renderListAndMarkers();
+            });
+
+            // Search Input Event
+            const searchInput = document.getElementById('search-input');
+            const clearSearchBtn = document.getElementById('clear-search');
+
+            searchInput.addEventListener('input', (e) => {
+                searchQuery = e.target.value;
+                if (searchQuery.length > 0) {
+                    clearSearchBtn.classList.remove('hidden');
+                } else {
+                    clearSearchBtn.classList.add('hidden');
+                }
+                renderListAndMarkers();
+            });
+
+            clearSearchBtn.addEventListener('click', () => {
+                searchInput.value = '';
+                searchQuery = '';
+                clearSearchBtn.classList.add('hidden');
+                renderListAndMarkers();
+            });
+
+            // Mobile Sidebar Toggles
+            const sidebar = document.getElementById('sidebar');
+            document.getElementById('toggle-sidebar').addEventListener('click', () => {
+                sidebar.classList.toggle('-translate-x-full');
+            });
+            document.getElementById('close-sidebar').addEventListener('click', () => {
+                sidebar.classList.add('-translate-x-full');
+            });
+
+            // Recenter Map
+            document.getElementById('recenter-map').addEventListener('click', () => {
+                map.flyTo([-26.5, -50.5], 6);
+            });
+
+            // Toggle Light/Dark Map Tile Theme
+            document.getElementById('toggle-map-style').addEventListener('click', () => {
+                map.removeLayer(currentTileLayer);
+                isDarkMap = !isDarkMap;
+                
+                const attr = isDarkMap 
+                    ? 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+                    : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+                currentTileLayer = L.tileLayer(isDarkMap ? darkTiles : lightTiles, {
+                    maxZoom: 18,
+                    attribution: attr
+                }).addTo(map);
+            });
+        }
+    </script>
+</body>
+</html>

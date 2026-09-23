@@ -2,29 +2,51 @@ name: Atualização Automática de Interdições
 
 on:
   schedule:
-    # Roda automaticamente a cada 6 horas
-    - cron: '0 */6 * * *'
-  workflow_dispatch: # Permite rodar manualmente com 1 clique no GitHub
+    # Roda automaticamente a cada 1 hora para manter apenas os dados das últimas 24h
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
-  build:
+  atualizar-dados:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Executar Script
-        run: python3 atualizar_interdicoes.py
+      - name: Executar script de coleta
+        run: |
+          echo "Iniciando coleta de interdições das últimas 24 horas..."
+          python3 atualizar_interdicoes.py
+          echo "Coleta finalizada."
 
-      - name: Commit e Push dos dados atualizados
+      - name: Verificar se houve alteração
+        id: diff
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add interdicoes.json interdicoes_manual.json
-          git commit -m "bot: atualização automática de interdições [skip ci]" || exit 0
+          if git diff --cached --quiet; then
+            echo "mudou=false" >> "$GITHUB_OUTPUT"
+            echo "Nenhuma alteração detectada após o filtro de 24 horas."
+          else
+            echo "mudou=true" >> "$GITHUB_OUTPUT"
+            echo "Alteração detectada; preparando commit."
+          fi
+
+      - name: Commit e push dos dados atualizados
+        if: steps.diff.outputs.mudou == 'true'
+        run: |
+          echo "Enviando atualização para o repositório..."
+          git commit -m "bot: atualização automática de interdições [skip ci]"
           git push
+          echo "Atualização enviada com sucesso."

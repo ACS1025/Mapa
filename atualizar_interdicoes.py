@@ -54,6 +54,100 @@ def fetch(url):
     with urllib.request.urlopen(req, timeout=25) as r:
         return r.read().decode("utf-8", "ignore")
 
+def infer_data_evento(texto):
+    """Tenta extrair a data real de um evento a partir de texto do site."""
+    if texto is None:
+        return datetime.datetime.now()
+
+    if isinstance(texto, datetime.datetime):
+        return texto
+    if isinstance(texto, datetime.date):
+        return datetime.datetime.combine(texto, datetime.time.min)
+
+    texto_limpo = str(texto).strip()
+    if not texto_limpo:
+        return datetime.datetime.now()
+
+    lower = texto_limpo.lower()
+    now = datetime.datetime.now()
+
+    # Frases relativas
+    if 'hoje' in lower or 'hoje,' in lower:
+        return now
+    if 'ontem' in lower:
+        return now - datetime.timedelta(days=1)
+
+    for padrao, conversor in [
+        (r'\b(?:h[aá]|a)\s+(\d+)\s*(minuto|minutos|hora|horas|dia|dias|semana|semanas)\b', None),
+        (r'\b(?:há|ha)\s+(\d+)\s*(minuto|minutos|hora|horas|dia|dias|semana|semanas)\b', None),
+    ]:
+        m = re.search(padrao, lower)
+        if m:
+            qtd = int(m.group(1))
+            unidade = m.group(2)
+            if unidade.startswith('minut'):
+                return now - datetime.timedelta(minutes=qtd)
+            if unidade.startswith('hora'):
+                return now - datetime.timedelta(hours=qtd)
+            if unidade.startswith('dia'):
+                return now - datetime.timedelta(days=qtd)
+            if unidade.startswith('semana'):
+                return now - datetime.timedelta(weeks=qtd)
+
+    # Datas explícitas com hora
+    for padrao, fmt in [
+        (r'\b(\d{1,2}/\d{1,2}/\d{2,4})\s+(\d{1,2}:\d{2})\b', '%d/%m/%Y %H:%M'),
+        (r'\b(\d{1,2}/\d{1,2}/\d{2,4})\b', '%d/%m/%Y'),
+        (r'\b(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\b', '%Y-%m-%d %H:%M'),
+        (r'\b(\d{4}-\d{2}-\d{2})\b', '%Y-%m-%d'),
+    ]:
+        m = re.search(padrao, texto_limpo)
+        if m:
+            valor = m.group(1)
+            if len(m.groups()) > 1 and m.group(2):
+                valor = f"{m.group(1)} {m.group(2)}"
+            try:
+                return datetime.datetime.strptime(valor, fmt)
+            except ValueError:
+                pass
+
+    # Casos como "atualizado em 23/09/2026 13:40" também entram aqui
+    match = re.search(r'\b(\d{1,2}/\d{1,2}/\d{2,4}[\s]+\d{1,2}:\d{2})\b', texto_limpo)
+    if match:
+        try:
+            return datetime.datetime.strptime(match.group(1), '%d/%m/%Y %H:%M')
+        except ValueError:
+            pass
+
+    return now
+
+
+def eh_recente(data_str, horas=24):
+    """Valida se a data/referência do item está dentro das últimas 24 horas."""
+    if data_str in (None, '', 'N/A', '—', '-'):
+        return False
+
+    now = datetime.datetime.now()
+    data = infer_data_evento(data_str)
+    delta = now - data
+
+    if delta < datetime.timedelta(0):
+        return True
+    return delta <= datetime.timedelta(hours=horas)
+
+
+def eh_registro_recente(item, horas=24):
+    """Retorna True somente para itens com data válida dentro da janela recente."""
+    if not isinstance(item, dict):
+        return False
+
+    data_val = item.get("data") or item.get("atualizado_em") or item.get("data_evento")
+    if data_val in (None, '', 'N/A', '—', '-'):
+        return False
+
+    return eh_recente(str(data_val), horas=horas)
+
+
 def geocodificar_local(local, uf):
     """
     Tenta obter lat/lon via Nominatim (OpenStreetMap) gratuito caso o item automático não possua coordenadas.
@@ -103,8 +197,11 @@ def scrape_best_effort():
             if km_m:
                 km = "km " + km_m.group(1).strip()
 
-            ctx = texto[max(0, m.start() - 80): m.end() + 120].strip()
-            
+            ctx = texto[max(0, m.start() - 120): m.end() + 200].strip()
+            data_evento = infer_data_evento(ctx)
+            if not eh_recente(data_evento.strftime('%d/%m/%Y %H:%M'), horas=24):
+                continue
+
             # Inferir UF a partir do código da rodovia (ex: ERS-630 -> RS)
             uf_inferida = ""
             prefixo = rod.split('-')[0]
@@ -122,7 +219,7 @@ def scrape_best_effort():
                 "status": "total" if "total" in ctx.lower() else "parcial",
                 "causa": ctx[:180],
                 "fonte": fonte + " (auto)",
-                "data": datetime.date.today().strftime("%d/%m/%Y"),
+                "data": data_evento.strftime("%d/%m/%Y"),
                 "lat": None,
                 "lon": None,
                 "_auto": True
@@ -147,8 +244,13 @@ def main():
         print(f"[aviso] {MANUAL.name} não encontrado — criando arquivo base.")
         MANUAL.write_text("[]", encoding="utf-8")
 
-    # Registros manuais validados possuem prioridade absoluta
-    dados = [d for d in manual if d.get("lat") is not None and d.get("lon") is not None]
+    # Registros manuais validados possuem prioridade absoluta, mas somente se forem recentes
+    dados = [
+        d for d in manual
+        if d.get("lat") is not None
+        and d.get("lon") is not None
+        and eh_registro_recente(d, horas=24)
+    ]
     vistos = {(d.get("uf", ""), d.get("rodovia", ""), d.get("km", "")) for d in dados}
 
     # 2. Executa o Scraper
@@ -171,7 +273,10 @@ def main():
                 vistos.add(chave)
                 novos_adicionados += 1
 
-    # 4. Grava a saída JSON consolidada
+    # 4. Filtra novamente antes de salvar para garantir que só reste dados recentes
+    dados = [d for d in dados if eh_registro_recente(d, horas=24)]
+
+    # 5. Grava a saída JSON consolidada
     payload = {
         "atualizado_em": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
         "fontes": list(SOURCES.keys()),

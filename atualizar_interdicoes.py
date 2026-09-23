@@ -55,9 +55,13 @@ def fetch(url):
         return r.read().decode("utf-8", "ignore")
 
 def infer_data_evento(texto):
-    """Tenta extrair a data real de um evento a partir de texto do site."""
+    """Tenta extrair a data real de um evento a partir de texto do site.
+
+    Rejeita frases vagas como 'vigente', 'atual', 'em andamento' sem data objetiva,
+    porque isso não pode ser tratado como evento recente.
+    """
     if texto is None:
-        return datetime.datetime.now()
+        return None
 
     if isinstance(texto, datetime.datetime):
         return texto
@@ -66,10 +70,15 @@ def infer_data_evento(texto):
 
     texto_limpo = str(texto).strip()
     if not texto_limpo:
-        return datetime.datetime.now()
+        return None
 
     lower = texto_limpo.lower()
     now = datetime.datetime.now()
+
+    # Frases vagas sem data precisa são descartadas
+    if re.search(r'\b(?:vigente|atual|em andamento|em vigor|mantenha|indefinido)\b', lower):
+        if not re.search(r'\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{4}', texto_limpo):
+            return None
 
     # Frases relativas
     if 'hoje' in lower or 'hoje,' in lower:
@@ -77,17 +86,19 @@ def infer_data_evento(texto):
     if 'ontem' in lower:
         return now - datetime.timedelta(days=1)
 
-    for padrao, conversor in [
-        (r'\b(?:h[aá]|a)\s+(\d+)\s*(minuto|minutos|hora|horas|dia|dias|semana|semanas)\b', None),
-        (r'\b(?:há|ha)\s+(\d+)\s*(minuto|minutos|hora|horas|dia|dias|semana|semanas)\b', None),
+    for padrao in [
+        r'\b(?:h[aá]|a)\s+(\d+)\s*(minuto|minutos|hora|horas|dia|dias|semana|semanas)\b',
+        r'\b(?:há|ha)\s+(\d+)\s*(minuto|minutos|hora|horas|dia|dias|semana|semanas)\b',
+        r'\b(?:h[aá]|a)\s*(\d+)\s*(h|hr|hrs|horas)\b',
+        r'\b(?:há|ha)\s*(\d+)\s*(h|hr|hrs|horas)\b',
     ]:
         m = re.search(padrao, lower)
         if m:
             qtd = int(m.group(1))
-            unidade = m.group(2)
+            unidade = (m.group(2) or '').lower()
             if unidade.startswith('minut'):
                 return now - datetime.timedelta(minutes=qtd)
-            if unidade.startswith('hora'):
+            if unidade.startswith('hora') or unidade in {'h', 'hr', 'hrs'}:
                 return now - datetime.timedelta(hours=qtd)
             if unidade.startswith('dia'):
                 return now - datetime.timedelta(days=qtd)
@@ -100,6 +111,7 @@ def infer_data_evento(texto):
         (r'\b(\d{1,2}/\d{1,2}/\d{2,4})\b', '%d/%m/%Y'),
         (r'\b(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\b', '%Y-%m-%d %H:%M'),
         (r'\b(\d{4}-\d{2}-\d{2})\b', '%Y-%m-%d'),
+        (r'\b(\d{1,2}/\d{4})\b', '%m/%Y'),
     ]:
         m = re.search(padrao, texto_limpo)
         if m:
@@ -119,16 +131,19 @@ def infer_data_evento(texto):
         except ValueError:
             pass
 
-    return now
+    return None
 
 
 def eh_recente(data_str, horas=24):
     """Valida se a data/referência do item está dentro das últimas 24 horas."""
-    if data_str in (None, '', 'N/A', '—', '-'):
+    if data_str in (None, '', 'N/A', '—', '-', 'vigente', 'atual'):
+        return False
+
+    data = infer_data_evento(data_str)
+    if data is None:
         return False
 
     now = datetime.datetime.now()
-    data = infer_data_evento(data_str)
     delta = now - data
 
     if delta < datetime.timedelta(0):
@@ -199,6 +214,8 @@ def scrape_best_effort():
 
             ctx = texto[max(0, m.start() - 120): m.end() + 200].strip()
             data_evento = infer_data_evento(ctx)
+            if data_evento is None:
+                continue
             if not eh_recente(data_evento.strftime('%d/%m/%Y %H:%M'), horas=24):
                 continue
 
@@ -245,12 +262,23 @@ def main():
         MANUAL.write_text("[]", encoding="utf-8")
 
     # Registros manuais validados possuem prioridade absoluta, mas somente se forem recentes
-    dados = [
-        d for d in manual
-        if d.get("lat") is not None
-        and d.get("lon") is not None
-        and eh_registro_recente(d, horas=24)
-    ]
+    dados = []
+    descartados_manuais = 0
+    for d in manual:
+        if not isinstance(d, dict):
+            descartados_manuais += 1
+            continue
+        if d.get("lat") is None or d.get("lon") is None:
+            descartados_manuais += 1
+            continue
+        if not eh_registro_recente(d, horas=24):
+            descartados_manuais += 1
+            continue
+        dados.append(d)
+
+    if descartados_manuais:
+        print(f"[info] {descartados_manuais} registros manuais descartados por estarem antigos ou sem data confiável.")
+
     vistos = {(d.get("uf", ""), d.get("rodovia", ""), d.get("km", "")) for d in dados}
 
     # 2. Executa o Scraper
@@ -259,7 +287,12 @@ def main():
 
     # 3. Tenta geocodificar itens automáticos que não estejam na lista manual
     novos_adicionados = 0
+    descartados_auto = 0
     for a in auto:
+        if not eh_registro_recente(a, horas=24):
+            descartados_auto += 1
+            continue
+
         chave = (a.get("uf", ""), a.get("rodovia", ""), a.get("km", ""))
         if chave not in vistos:
             # Se tiver informações de cidade/local, tenta a geocodificação
@@ -272,6 +305,9 @@ def main():
                 dados.append(a)
                 vistos.add(chave)
                 novos_adicionados += 1
+
+    if descartados_auto:
+        print(f"[info] {descartados_auto} registros automáticos descartados por estarem fora das últimas 24h.")
 
     # 4. Filtra novamente antes de salvar para garantir que só reste dados recentes
     dados = [d for d in dados if eh_registro_recente(d, horas=24)]

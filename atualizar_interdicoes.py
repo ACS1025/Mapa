@@ -248,44 +248,21 @@ def scrape_best_effort():
 
 def main():
     print("== Atualização de interdições rodoviárias ==")
-    
-    # 1. Carrega base manual
-    manual = []
+
+    # 1. Arquivo manual ignorado intencionalmente
     if MANUAL.exists():
-        try:
-            manual = json.loads(MANUAL.read_text(encoding="utf-8"))
-            print(f"Manual: {len(manual)} registros conferidos carregados")
-        except Exception as e:
-            print(f"[erro] Erro ao ler {MANUAL.name}: {e}", file=sys.stderr)
+        print(f"[info] {MANUAL.name} presente, mas ignorado pela atualização ativa.")
     else:
-        print(f"[aviso] {MANUAL.name} não encontrado — criando arquivo base.")
-        MANUAL.write_text("[]", encoding="utf-8")
+        print(f"[aviso] {MANUAL.name} não encontrado; será usada apenas a varredura automática.")
 
-    # Registros manuais validados possuem prioridade absoluta, mas somente se forem recentes
     dados = []
-    descartados_manuais = 0
-    for d in manual:
-        if not isinstance(d, dict):
-            descartados_manuais += 1
-            continue
-        if d.get("lat") is None or d.get("lon") is None:
-            descartados_manuais += 1
-            continue
-        if not eh_registro_recente(d, horas=24):
-            descartados_manuais += 1
-            continue
-        dados.append(d)
-
-    if descartados_manuais:
-        print(f"[info] {descartados_manuais} registros manuais descartados por estarem antigos ou sem data confiável.")
-
-    vistos = {(d.get("uf", ""), d.get("rodovia", ""), d.get("km", "")) for d in dados}
+    vistos = set()
 
     # 2. Executa o Scraper
     print("\nExecutando varredura automatizada...")
     auto = scrape_best_effort()
 
-    # 3. Tenta geocodificar itens automáticos que não estejam na lista manual
+    # 3. Adiciona apenas itens automáticos recentes com geolocalização
     novos_adicionados = 0
     descartados_auto = 0
     for a in auto:
@@ -295,7 +272,6 @@ def main():
 
         chave = (a.get("uf", ""), a.get("rodovia", ""), a.get("km", ""))
         if chave not in vistos:
-            # Se tiver informações de cidade/local, tenta a geocodificação
             if a.get("local") and a.get("uf"):
                 lat, lon = geocodificar_local(a["local"], a["uf"])
                 a["lat"] = lat
@@ -309,7 +285,7 @@ def main():
     if descartados_auto:
         print(f"[info] {descartados_auto} registros automáticos descartados por estarem fora das últimas 24h.")
 
-    # 4. Filtra novamente antes de salvar para garantir que só reste dados recentes
+    # 4. Filtra novamente antes de salvar
     dados = [d for d in dados if eh_registro_recente(d, horas=24)]
 
     # 5. Grava a saída JSON consolidada
@@ -319,9 +295,9 @@ def main():
         "total": len(dados),
         "interdicoes": dados,
     }
-    
+
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    
+
     print(f"\n==========================================")
     print(f"Sucesso! {OUT.name} atualizado.")
     print(f"Total de pontos no mapa: {len(dados)}")
